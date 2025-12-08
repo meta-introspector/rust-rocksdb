@@ -4,24 +4,26 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable"; # Directly use nixpkgs-unstable
     flake-utils.url = "github:meta-introspector/flake-utils?ref=feature/CRQ-016-nixify";
-    rust-overlay = {
-      url = "github:meta-introspector/rust-overlay?ref=feature/CRQ-016-nixify";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    # Temporarily remove rust-overlay to debug
+    # rust-overlay = {
+    #   url = "github:meta-introspector/rust-overlay?ref=feature/CRQ-016-nixify";
+    #   inputs.nixpkgs.follows = "nixpkgs";
+    # };
   };
 
-  outputs = { self, nixpkgs, rust-overlay, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils }: # Removed rust-overlay from arguments
     flake-utils.lib.eachDefaultSystem (system:
       let
-        overlays = [ rust-overlay.overlays.default ];
+        # overlays = [ rust-overlay.overlays.default ]; # Removed rust-overlay
         pkgs = import nixpkgs {
-          inherit system overlays;
+          inherit system; # Removed overlays
           config = {
             permittedInsecurePackages = [ "openssl-1.1.1w" ];
           };
         };
 
-        myRustc = pkgs.rust-bin.nightly."2025-10-05".default;
+        # Use default rustc from nixpkgs for now
+        myRustc = pkgs.rustc; 
 
       in {
         devShells.default = pkgs.mkShell {
@@ -47,7 +49,7 @@
             bzip2 # For "bzip2" feature
             liburing # For "io-uring" feature (pkg-config will find it)
             pkg-config # Needed for pkg-config in build.rs
-            # openssl_1_1.dev # Included in permittedInsecurePackages, but needs to be in packages for its headers to be found by bindgen.
+            openssl_1_1.dev # Included in permittedInsecurePackages, but needs to be in packages for its headers to be found by bindgen.
           ];
 
           shellHook = ''
