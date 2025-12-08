@@ -1,6 +1,12 @@
 use std::path::Path;
 use std::{env, fs, path::PathBuf, process::Command};
 
+const NIX_LLVM_CONFIG: &str = "/nix/store/nasb2hacyvikadjhr9qip2r8b72ir819-llvm-19.1.7/bin/llvm-config";
+const NIX_LIBCLANG_PATH: &str = "/nix/store/10mkp77lmqz8x2awd8hzv6pf7f7rkf6d-clang-19.1.7-lib/lib";
+const NIX_LLVM_CONFIG_PATH: &str = "/nix/store/nasb2hacyvikadjhr9qip2r8b72ir819-llvm-19.1.7/lib";
+const NIX_GLIBC_DEV: &str = "/nix/store/gf3wh0x0rzb1dkx0wx1jvmipydwfzzd5-glibc-2.40-66-dev";
+const NIX_GCC_PATH: &str = "/nix/store/82kmz7r96navanrc2fgckh2bamiqrgsw-gcc-14.3.0";
+
 // On these platforms jemalloc-sys will use a prefixed jemalloc which cannot be linked together
 // with RocksDB.
 // See https://github.com/tikv/jemallocator/blob/tikv-jemalloc-sys-0.5.3/jemalloc-sys/src/env.rs#L25
@@ -21,8 +27,8 @@ fn link(name: &str, bundled: bool) {
 
 fn fail_on_empty_directory(name: &str) {
     if fs::read_dir(name).unwrap().count() == 0 {
-        println!("The `{name}` directory is empty, did you forget to pull the submodules?");
-        println!("Try `git submodule update --init --recursive`");
+        println!("cargo:warning=The `{name}` directory is empty, did you forget to pull the submodules?");
+        println!("cargo:warning=Try `git submodule update --init --recursive`");
         panic!();
     }
 }
@@ -32,12 +38,37 @@ fn rocksdb_include_dir() -> String {
 }
 
 fn bindgen_rocksdb() {
+    println!("cargo:warning=bindgen_rocksdb: setting LIBCLANG_PATH={}", NIX_LIBCLANG_PATH);
+    env::set_var("LIBCLANG_PATH", NIX_LIBCLANG_PATH);
+    env::set_var("LLVM_CONFIG_PATH", NIX_LLVM_CONFIG_PATH);
+    env::set_var("LLVM_CONFIG", NIX_LLVM_CONFIG);
+    
+    // Construct BINDGEN_EXTRA_CLANG_ARGS dynamically similar to oldflake.nix
+    let bindgen_extra_clang_args = format!(
+        "-B{}/lib -idirafter {}/include -idirafter {}/include/c++/{}/",
+        NIX_GLIBC_DEV,
+        NIX_GLIBC_DEV,
+        NIX_GCC_PATH,
+        // Need to figure out GCC version dynamically or hardcode it.
+        // For now, hardcoding based on oldflake.nix output.
+        "14.3.0" 
+    );
+    println!("cargo:warning=BINDGEN_EXTRA_CLANG_ARGS: {}", bindgen_extra_clang_args);
+
     let bindings = bindgen::Builder::default()
         .header(rocksdb_include_dir() + "/rocksdb/c.h")
         .derive_debug(false)
         .blocklist_type("max_align_t") // https://github.com/rust-lang-nursery/rust-bindgen/issues/550
         .ctypes_prefix("libc")
         .size_t_is_usize(true)
+        .clang_args(&[
+            "-I", &format!("{}/include/c++/{}/", NIX_GCC_PATH, "14.3.0"),
+            "-I", &format!("{}/lib/clang/19/include/", NIX_LIBCLANG_PATH.replace("/lib", "/lib/clang/19")),
+            "-I", &format!("{}/lib/clang/19/include/llvm_libc_wrappers/", NIX_LIBCLANG_PATH.replace("/lib", "/lib/clang/19")),
+            "-B", &format!("{}/lib", NIX_GLIBC_DEV),
+            "-idirafter", &format!("{}/include", NIX_GLIBC_DEV),
+            "--verbose",
+        ])
         .generate()
         .expect("unable to generate rocksdb bindings");
 
@@ -48,12 +79,19 @@ fn bindgen_rocksdb() {
 }
 
 fn build_rocksdb() {
+    println!("cargo:warning=Executing build_rocksdb function.");
     let target = env::var("TARGET").unwrap();
 
     let mut config = cc::Build::new();
     config.include("rocksdb/include/");
     config.include("rocksdb/");
+    config.include(&format!("{}/include", NIX_GLIBC_DEV)); // Explicitly add glibc headers
+    config.include(&format!("{}/include/c++/{}/", NIX_GCC_PATH, "14.3.0")); // Explicitly add gcc C++ headers
     config.include("rocksdb/third-party/gtest-1.8.1/fused-src/");
+
+    // Explicitly set sysroot for cc-rs build
+    config.flag(&format!("--sysroot={}", NIX_GLIBC_DEV));
+
 
     if cfg!(feature = "snappy") {
         config.define("SNAPPY", Some("1"));
@@ -97,8 +135,7 @@ fn build_rocksdb() {
         config.flag("-flto");
         if !config.get_compiler().is_like_clang() {
             panic!(
-                "LTO is only supported with clang. Either disable the `lto` feature \
-                or set `CC=/usr/bin/clang CXX=/usr/bin/clang++` environment variables."
+                "LTO is only supported with clang. Either disable the `lto` feature or set `CC=/usr/bin/clang CXX=/usr/bin/clang++` environment variables."
             );
         }
     }
@@ -317,6 +354,7 @@ fn build_snappy() {
     let mut config = cc::Build::new();
 
     config.include("snappy/");
+        config.include("/nix/store/82kmz7r96navanrc2fgckh2bamiqrgsw-gcc-14.3.0/include/c++/14.3.0/");
     config.include(".");
     config.define("NDEBUG", Some("1"));
     config.extra_warnings(false);

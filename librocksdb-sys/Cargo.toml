@@ -17,7 +17,7 @@ links = "rocksdb"
 
 [features]
 default = ["static", "bindgen/runtime"]
-# jemalloc = ["tikv-jemalloc-sys"]
+jemalloc = []
 static = ["libz-sys?/static", "bzip2-sys?/static"]
 bindgen-runtime = ["bindgen/runtime"]
 bindgen-static = ["bindgen/static"]

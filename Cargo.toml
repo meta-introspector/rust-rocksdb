@@ -18,8 +18,8 @@ exclude = [".gitignore", ".travis.yml", "deploy.sh", "test/**/*"]
 
 
 [features]
-default = ["snappy", "lz4", "zstd", "zlib", "bzip2"]
-# jemalloc = ["librocksdb-sys/jemalloc"]
+default = ["snappy", "lz4", "zstd", "zlib", "bzip2", ]
+jemalloc = [] # "librocksdb-sys/jemalloc"
 io-uring = ["librocksdb-sys/io-uring"]
 valgrind = []
 mt_static = ["librocksdb-sys/mt_static"]

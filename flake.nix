@@ -23,39 +23,39 @@
         };
 
         # Use default rustc from nixpkgs for now
-        myRustc = pkgs.rustc; 
+        myRustc = pkgs.rustc;
 
       in {
         devShells.default = pkgs.mkShell {
-          packages = with pkgs; [
-            # Rust toolchain
-            myRustc
-            cargo
-            rustfmt
-            clippy
+          packages = with pkgs;
+            [ # Rust toolchain
+              myRustc
+              cargo
+              rustfmt
+              clippy
 
-            # Essential build tools for C/C++ and FFI
-            clang # For C++ compilation and bindgen
-            llvmPackages.libclang # For bindgen
-            llvmPackages.llvm # Provides llvm-config
-            gcc # C compiler
-            glibc.dev # Provides system headers
+              # Essential build tools for C/C++ and FFI
+              clang # For C++ compilation and bindgen
+              llvmPackages.libclang # For bindgen
+              llvmPackages.llvm # Provides llvm-config
+              gcc # C compiler
+              glibc.dev # Provides system headers
 
-            # Libraries corresponding to Cargo features
-            snappy # For "snappy" feature
-            lz4 # For "lz4" feature
-            zstd # For "zstd" feature
-            zlib # For "zlib" feature
-            bzip2 # For "bzip2" feature
-            liburing # For "io-uring" feature (pkg-config will find it)
-            pkg-config # Needed for pkg-config in build.rs
-            openssl_1_1.dev # Included in permittedInsecurePackages, but needs to be in packages for its headers to be found by bindgen.
-          ];
+              # Libraries corresponding to Cargo features
+              snappy # For "snappy" feature
+              lz4 # For "lz4" feature
+              zstd # For "zstd" feature
+              zlib # For "zlib" feature
+              bzip2 # For "bzip2" feature
+              liburing # For "io-uring" feature (pkg-config will find it)
+              pkg-config # Needed for pkg-config in build.rs
+              openssl_1_1.dev # Included in permittedInsecurePackages, but needs to be in packages for its headers to be found by bindgen.
+            ];
 
           shellHook = ''
             # Environment variables needed by build.rs
             # These should guide bindgen and cc-rs to the correct Nix paths
-            export LIBCLANG_PATH="${pkgs.llvmPackages.libclang}/lib";
+            export LIBCLANG_PATH="/nix/store/10mkp77lmqz8x2awd8hzv6pf7f7rkf6d-clang-19.1.7-lib/lib"; # Explicit path
             export LLVM_CONFIG_PATH="${pkgs.llvmPackages.llvm}/lib";
             export LLVM_CONFIG="${pkgs.llvmPackages.llvm.dev}/bin/llvm-config";
             
@@ -67,7 +67,7 @@
 
             # Flags for bindgen to find system headers.
             # This incorporates the logic from oldflake.nix shellHook.
-            export BINDGEN_EXTRA_CLANG_ARGS="$(
+            export BINDGEN_EXTRA_CLANG_ARGS=$(
               cat ${pkgs.stdenv.cc}/nix-support/libc-crt1-cflags \
                    ${pkgs.stdenv.cc}/nix-support/libc-cflags \
                    ${pkgs.stdenv.cc}/nix-support/cc-cflags) \
