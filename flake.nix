@@ -2,8 +2,7 @@
   description = "Nixification of the rust-rocksdb/librocksdb-sys crate";
 
   inputs = {
-    nixpkgs.follows = "nixpkgs-master"; # Reference the main nixpkgs
-    nixpkgs-master.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable"; # Directly use nixpkgs-unstable
     flake-utils.url = "github:meta-introspector/flake-utils?ref=feature/CRQ-016-nixify";
     rust-overlay = {
       url = "github:meta-introspector/rust-overlay?ref=feature/CRQ-016-nixify";
@@ -48,6 +47,7 @@
             bzip2 # For "bzip2" feature
             liburing # For "io-uring" feature (pkg-config will find it)
             pkg-config # Needed for pkg-config in build.rs
+            # openssl_1_1.dev # Included in permittedInsecurePackages, but needs to be in packages for its headers to be found by bindgen.
           ];
 
           shellHook = ''
