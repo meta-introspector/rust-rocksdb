@@ -81,7 +81,7 @@
             export PKG_CONFIG_PATH="${pkgs.openssl_1_1.dev}/lib/pkgconfig''${PKG_CONFIG_PATH:+:}$PKG_CONFIG_PATH";
             export REAL_LIBRARY_PATH_VAR="LD_LIBRARY_PATH";
             export REAL_LIBRARY_PATH="$LD_LIBRARY_PATH";
-            export CPATH="${pkgs.gcc}/include${CPATH:+:}$CPATH";
+            export CPATH="${pkgs.glibc.dev}/include:${pkgs.gcc}/include${CPATH:+:}$CPATH"; # Added glibc.dev/include to CPATH
             export RUSTC_BOOTSTRAP=1;
             export LIBCLANG_FLAGS="--sysroot=${pkgs.glibc.dev}"; # For bindgen to find stdbool.h
             export CFG_RELEASE="1.70.0"; # Added to resolve rustc_hir error
