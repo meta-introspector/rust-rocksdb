@@ -9,3 +9,13 @@ path
 .DS_Store
 .idea
 .vscode
+doit.sh
+doit.sh~
+errlog.txt
+log.txt
+report.txt
+str.txt
+todo.txt
+#todo.txt#
+.#todo.txt
+oldflake.nix
