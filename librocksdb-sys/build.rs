@@ -43,14 +43,24 @@ fn bindgen_rocksdb() {
     env::set_var("LLVM_CONFIG_PATH", NIX_LLVM_CONFIG_PATH);
     env::set_var("LLVM_CONFIG", NIX_LLVM_CONFIG);
     
-    // Construct BINDGEN_EXTRA_CLANG_ARGS dynamically similar to oldflake.nix
+    // Set LIBCLANG_FLAGS for bindgen to explicitly define sysroot and search paths
+    // This replicates the behavior observed in better.txt where bindgen succeeded.
+    env::set_var("LIBCLANG_FLAGS", &format!(
+        "--sysroot={} -B{}/lib -idirafter {}/include -idirafter {}/include/c++/{}/",
+        NIX_GLIBC_DEV,
+        NIX_GLIBC_DEV,
+        NIX_GLIBC_DEV,
+        NIX_GCC_PATH,
+        "14.3.0"
+    ));
+    
+    // bindgen_extra_clang_args might be redundant if LIBCLANG_FLAGS is set
+    // For now, let's keep it consistent with the previous logic if it's used elsewhere.
     let bindgen_extra_clang_args = format!(
         "-B{}/lib -idirafter {}/include -idirafter {}/include/c++/{}/",
         NIX_GLIBC_DEV,
         NIX_GLIBC_DEV,
         NIX_GCC_PATH,
-        // Need to figure out GCC version dynamically or hardcode it.
-        // For now, hardcoding based on oldflake.nix output.
         "14.3.0" 
     );
     println!("cargo:warning=BINDGEN_EXTRA_CLANG_ARGS: {}", bindgen_extra_clang_args);
@@ -61,14 +71,7 @@ fn bindgen_rocksdb() {
         .blocklist_type("max_align_t") // https://github.com/rust-lang-nursery/rust-bindgen/issues/550
         .ctypes_prefix("libc")
         .size_t_is_usize(true)
-        .clang_args(&[
-            "-I", &format!("{}/include/c++/{}/", NIX_GCC_PATH, "14.3.0"),
-            "-I", &format!("{}/lib/clang/19/include/", NIX_LIBCLANG_PATH.replace("/lib", "/lib/clang/19")),
-            "-I", &format!("{}/lib/clang/19/include/llvm_libc_wrappers/", NIX_LIBCLANG_PATH.replace("/lib", "/lib/clang/19")),
-            "-B", &format!("{}/lib", NIX_GLIBC_DEV),
-            "-idirafter", &format!("{}/include", NIX_GLIBC_DEV),
-            "--verbose",
-        ])
+        .clang_args(&["--verbose"]) // Only --verbose, let LIBCLANG_FLAGS handle includes
         .generate()
         .expect("unable to generate rocksdb bindings");
 
@@ -91,6 +94,11 @@ fn build_rocksdb() {
 
     // Explicitly set sysroot for cc-rs build
     config.flag(&format!("--sysroot={}", NIX_GLIBC_DEV));
+    config.flag(&format!("-isystem {}/include", NIX_GLIBC_DEV));
+    config.flag(&format!("-isystem {}/include/c++/{}/", NIX_GCC_PATH, "14.3.0"));
+
+    // Explicitly set sysroot for cc-rs build
+    // config.flag(&format!("--sysroot={}", NIX_GLIBC_DEV));
 
 
     if cfg!(feature = "snappy") {
@@ -443,6 +451,14 @@ fn cpp_link_stdlib(target: &str) {
 }
 
 fn main() {
+    let nix_llvm_config = NIX_LLVM_CONFIG;
+    let nix_libclang_path = NIX_LIBCLANG_PATH;
+    let nix_llvm_config_path = NIX_LLVM_CONFIG_PATH;
+    let nix_glibc_dev = NIX_GLIBC_DEV;
+    let nix_gcc_path = NIX_GCC_PATH;
+
+    env::set_var("CPATH", &format!("{}/include:{}/include/c++/{}/", NIX_GLIBC_DEV, NIX_GCC_PATH, "14.3.0"));
+
     if !Path::new("rocksdb/AUTHORS").exists() {
         update_submodules();
     }
@@ -474,13 +490,4 @@ fn main() {
         fail_on_empty_directory("snappy");
         build_snappy();
     }
-
-    // Allow dependent crates to locate the sources and output directory of
-    // this crate. Notably, this allows a dependent crate to locate the RocksDB
-    // sources and built archive artifacts provided by this crate.
-    println!(
-        "cargo:cargo_manifest_dir={}",
-        env::var("CARGO_MANIFEST_DIR").unwrap()
-    );
-    println!("cargo:out_dir={}", env::var("OUT_DIR").unwrap());
 }
