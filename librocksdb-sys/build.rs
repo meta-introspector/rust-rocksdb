@@ -1,11 +1,53 @@
 use std::path::Path;
 use std::{env, fs, path::PathBuf, process::Command};
+// Removed serde imports as dynamic loading/saving is temporarily bypassed
 
-const NIX_LLVM_CONFIG: &str = "/nix/store/nasb2hacyvikadjhr9qip2r8b72ir819-llvm-19.1.7/bin/llvm-config";
-const NIX_LIBCLANG_PATH: &str = "/nix/store/10mkp77lmqz8x2awd8hzv6pf7f7rkf6d-clang-19.1.7-lib/lib";
-const NIX_LLVM_CONFIG_PATH: &str = "/nix/store/nasb2hacyvikadjhr9qip2r8b72ir819-llvm-19.1.7/lib";
-const NIX_GLIBC_DEV: &str = "/nix/store/gf3wh0x0rzb1dkx0wx1jvmipydwfzzd5-glibc-2.40-66-dev";
-const NIX_GCC_PATH: &str = "/nix/store/82kmz7r96navanrc2fgckh2bamiqrgsw-gcc-14.3.0";
+const CACHE_FILE_NAME: &str = ".nix_paths_cache.json"; // Still here for context, not actively used right now
+
+#[derive(Debug, Clone)] // Derive Debug and Clone are sufficient without Serde
+struct NixPaths {
+    llvm_config: String,
+    libclang_path: String,
+    llvm_config_path: String,
+    glibc_dev: String,
+    gcc_path: String,
+    gcc_version: String, 
+    zlib_include: String,
+    bzip2_include: String,
+}
+
+impl NixPaths {
+    // from_env and load_from_cache are no longer called in main for this hardcoded approach,
+    // but the structure is retained for future dynamic path extraction.
+
+    /// Provides hardcoded default values for NixPaths.
+    /// These paths were manually extracted from a Nix `devShell` environment
+    /// using commands like `g++ -Wp,-v -x c++ -` and `nix eval --raw --impure --expr 'pkgs.llvmPackages_21.llvm' `.
+    ///
+    /// IMPORTANT: These paths are specific to the Nix environment they were extracted from.
+    /// They should eventually be replaced by a mechanism that dynamically queries Nix
+    /// for the correct paths at compile time (e.g., via proc-macros or `nix build` commands).
+    fn default_nix_paths() -> Self {
+        println!("cargo:warning=Using hardcoded default Nix paths.");
+        NixPaths {
+            // Derived from: nix eval --raw --impure --expr 'pkgs.llvmPackages_21.llvm.dev'
+            llvm_config: "/nix/store/v9cr3iv7wnrkjy1s3z1fi7wpkl7sy4hx-llvm-21.1.2-dev/bin/llvm-config".to_string(),
+            // Derived from: nix eval --raw --impure --expr 'pkgs.llvmPackages_21.libclang.lib'
+            libclang_path: "/nix/store/sqlnjj8c3n3si3sjnadhdbcwgrk97g2w-clang-wrapper-21.1.2/lib".to_string(),
+            // Derived from: nix eval --raw --impure --expr 'pkgs.llvmPackages_21.llvm'
+            llvm_config_path: "/nix/store/b5bmnvk17mq8qm5b8bpi9fkyr5g2d2m4-llvm-21.1.2/lib".to_string(),
+            // Derived from: nix eval --raw --impure --expr 'pkgs.glibc.dev' (and verified via g++ -Wp,-v)
+            glibc_dev: "/nix/store/gi4cz4ir3zlwhf1azqfgxqdnczfrwsr7-glibc-2.40-66-dev".to_string(),
+            // Derived from: `g++ -Wp,-v -x c++ -` output, showing actual GCC installation path
+            gcc_path: "/nix/store/vr15iyyykg9zai6fpgvhcgyw7gckl78w-gcc-wrapper-14.3.0".to_string(),
+            // Manually extracted from the gcc_path string
+            gcc_version: "14.3.0".to_string(), 
+            zlib_include: "/nix/store/hqvsiah013yzb17b13fn18fpqk7m13cg-zlib-1.3.1-dev/include".to_string(),
+            bzip2_include: "/nix/store/q1a3bjhg3b4plgb7fk7zis1gi09rbi1d-bzip2-1.0.8-dev/include".to_string(),
+        }
+    }
+}
+
 
 // On these platforms jemalloc-sys will use a prefixed jemalloc which cannot be linked together
 // with RocksDB.
@@ -37,33 +79,22 @@ fn rocksdb_include_dir() -> String {
     env::var("ROCKSDB_INCLUDE_DIR").unwrap_or_else(|_| "rocksdb/include".to_string())
 }
 
-fn bindgen_rocksdb() {
-    println!("cargo:warning=bindgen_rocksdb: setting LIBCLANG_PATH={}", NIX_LIBCLANG_PATH);
-    env::set_var("LIBCLANG_PATH", NIX_LIBCLANG_PATH);
-    env::set_var("LLVM_CONFIG_PATH", NIX_LLVM_CONFIG_PATH);
-    env::set_var("LLVM_CONFIG", NIX_LLVM_CONFIG);
+fn bindgen_rocksdb(nix_paths: &NixPaths) {
+    println!("cargo:warning=bindgen_rocksdb: setting LIBCLANG_PATH={}", nix_paths.libclang_path);
+    env::set_var("LIBCLANG_PATH", &nix_paths.libclang_path);
+    env::set_var("LLVM_CONFIG_PATH", &nix_paths.llvm_config_path);
+    env::set_var("LLVM_CONFIG", &nix_paths.llvm_config);
     
-    // Set LIBCLANG_FLAGS for bindgen to explicitly define sysroot and search paths
-    // This replicates the behavior observed in better.txt where bindgen succeeded.
-    env::set_var("LIBCLANG_FLAGS", &format!(
-        "--sysroot={} -B{}/lib -idirafter {}/include -idirafter {}/include/c++/{}/",
-        NIX_GLIBC_DEV,
-        NIX_GLIBC_DEV,
-        NIX_GLIBC_DEV,
-        NIX_GCC_PATH,
-        "14.3.0"
-    ));
+    // LIBCLANG_FLAGS is crucial for bindgen to find system headers.
+    // Setting it just to --sysroot=<glibc_dev> is consistent with how Nix often
+    // configures bindgen via `shellHook` for basic C standard library headers.
+    env::set_var("LIBCLANG_FLAGS", &format!("--sysroot={}", nix_paths.glibc_dev));
     
-    // bindgen_extra_clang_args might be redundant if LIBCLANG_FLAGS is set
-    // For now, let's keep it consistent with the previous logic if it's used elsewhere.
-    let bindgen_extra_clang_args = format!(
-        "-B{}/lib -idirafter {}/include -idirafter {}/include/c++/{}/",
-        NIX_GLIBC_DEV,
-        NIX_GLIBC_DEV,
-        NIX_GCC_PATH,
-        "14.3.0" 
-    );
-    println!("cargo:warning=BINDGEN_EXTRA_CLANG_ARGS: {}", bindgen_extra_clang_args);
+    // BINDGEN_EXTRA_CLANG_ARGS can be used for additional flags, but for now,
+    // we rely on LIBCLANG_FLAGS for the essential sysroot setting.
+    // Removing previous complex construction to avoid potential conflicts.
+
+
 
     let bindings = bindgen::Builder::default()
         .header(rocksdb_include_dir() + "/rocksdb/c.h")
@@ -81,24 +112,16 @@ fn bindgen_rocksdb() {
         .expect("unable to write rocksdb bindings");
 }
 
-fn build_rocksdb() {
+fn build_rocksdb(nix_paths: &NixPaths) {
     println!("cargo:warning=Executing build_rocksdb function.");
-    let target = env::var("TARGET").unwrap();
+    let target = env::var("TARGET").unwrap(); // Re-adding this line
 
-    let mut config = cc::Build::new();
-    config.include("rocksdb/include/");
-    config.include("rocksdb/");
-    config.include(&format!("{}/include", NIX_GLIBC_DEV)); // Explicitly add glibc headers
-    config.include(&format!("{}/include/c++/{}/", NIX_GCC_PATH, "14.3.0")); // Explicitly add gcc C++ headers
-    config.include("rocksdb/third-party/gtest-1.8.1/fused-src/");
+    let mut config = cc::Build::new(); // Re-adding this line    // Force g++ to use only explicitly provided standard library include paths.
+    // This is crucial in Nix environments where toolchains are distributed across
+    // multiple store paths and default search mechanisms can fail.
 
-    // Explicitly set sysroot for cc-rs build
-    config.flag(&format!("--sysroot={}", NIX_GLIBC_DEV));
-    config.flag(&format!("-isystem {}/include", NIX_GLIBC_DEV));
-    config.flag(&format!("-isystem {}/include/c++/{}/", NIX_GCC_PATH, "14.3.0"));
 
-    // Explicitly set sysroot for cc-rs build
-    // config.flag(&format!("--sysroot={}", NIX_GLIBC_DEV));
+
 
 
     if cfg!(feature = "snappy") {
@@ -122,16 +145,12 @@ fn build_rocksdb() {
 
     if cfg!(feature = "zlib") {
         config.define("ZLIB", Some("1"));
-        if let Some(path) = env::var_os("DEP_Z_INCLUDE") {
-            config.include(path);
-        }
+        config.include(&nix_paths.zlib_include);
     }
 
     if cfg!(feature = "bzip2") {
         config.define("BZIP2", Some("1"));
-        if let Some(path) = env::var_os("DEP_BZIP2_INCLUDE") {
-            config.include(path);
-        }
+        config.include(&nix_paths.bzip2_include);
     }
 
     if cfg!(feature = "rtti") {
@@ -322,6 +341,8 @@ fn build_rocksdb() {
     } else {
         config.flag(cxx_standard());
         // matches the flags in CMakeLists.txt from rocksdb
+        config.flag("-v");
+        config.flag("-Wfatal-errors");
         config.flag("-Wsign-compare");
         config.flag("-Wshadow");
         config.flag("-Wno-unused-parameter");
@@ -347,6 +368,7 @@ fn build_rocksdb() {
 
     if !target.contains("windows") {
         config.flag("-include").flag("cstdint");
+        config.flag("-include").flag("cstddef");
     }
 
     // By default `cc` will link C++ standard library automatically,
@@ -356,14 +378,10 @@ fn build_rocksdb() {
     config.compile("librocksdb.a");
 }
 
-fn build_snappy() {
+fn build_snappy(nix_paths: &NixPaths) {
     let target = env::var("TARGET").unwrap();
     let endianness = env::var("CARGO_CFG_TARGET_ENDIAN").unwrap();
     let mut config = cc::Build::new();
-
-    config.include("snappy/");
-        config.include("/nix/store/82kmz7r96navanrc2fgckh2bamiqrgsw-gcc-14.3.0/include/c++/14.3.0/");
-    config.include(".");
     config.define("NDEBUG", Some("1"));
     config.extra_warnings(false);
 
@@ -451,18 +469,64 @@ fn cpp_link_stdlib(target: &str) {
 }
 
 fn main() {
-    let nix_llvm_config = NIX_LLVM_CONFIG;
-    let nix_libclang_path = NIX_LIBCLANG_PATH;
-    let nix_llvm_config_path = NIX_LLVM_CONFIG_PATH;
-    let nix_glibc_dev = NIX_GLIBC_DEV;
-    let nix_gcc_path = NIX_GCC_PATH;
+    // Aggressively unset environment variables that could interfere with the build process
+    // This ensures that `build.rs` is completely self-contained and deterministic,
+    // not relying on or being influenced by `flake.nix`'s `shellHook` or other external settings.
+    // env::remove_var("CC"); // Removed to allow propagation
+    // env::remove_var("CXX"); // Removed to allow propagation
+    // env::remove_var("CFLAGS"); // Removed to allow propagation
+    // env::remove_var("CXXFLAGS"); // Removed to allow propagation
 
-    env::set_var("CPATH", &format!("{}/include:{}/include/c++/{}/", NIX_GLIBC_DEV, NIX_GCC_PATH, "14.3.0"));
+    // env::remove_var("LIBRARY_PATH"); // Removed to allow propagation
+    // env::remove_var("LD_LIBRARY_PATH"); // Removed to allow propagation
+    // env::remove_var("PROTOC"); // Removed to allow propagation
+    // env::remove_var("PROTOC_INCLUDE"); // Removed to allow propagation
+    // env::remove_var("BINDGEN_EXTRA_CLANG_ARGS"); // Removed to allow propagation
+    // env::remove_var("LLVM_CONFIG"); // Removed to allow propagation
+    // env::remove_var("LLVM_CONFIG_PATH"); // Removed to allow propagation
+    // env::remove_var("LIBCLANG_PATH"); // Removed to allow propagation
+    // env::remove_var("LIBCLANG_FLAGS"); // Removed to allow propagation
+
+    // env::remove_var("NIX_GLIBC_DEV"); // Removed to allow propagation
+    // env::remove_var("NIX_GCC_PATH"); // Removed to allow propagation
+    // env::remove_var("NIX_GCC_REAL_PATH"); // Removed to allow propagation
+
+    // Always use hardcoded Nix paths for standalone compilation, and defensively unset
+    // environment variables that might interfere.
+    let nix_paths = NixPaths::default_nix_paths();
+
+    // --- Defensive Unsetting of Environment Variables ---
+    // These environment variables are commonly set by Nix shellHooks or other build systems.
+    // Unsetting them ensures that our hardcoded paths (or future dynamically extracted paths)
+    // are used consistently, preventing unexpected behavior or conflicts.
+    env::remove_var("LIBCLANG_PATH");
+    env::remove_var("LLVM_CONFIG");
+    env::remove_var("LLVM_CONFIG_PATH");
+    env::remove_var("CPATH");
+    env::remove_var("CFLAGS");
+    env::remove_var("CXXFLAGS");
+    env::remove_var("BINDGEN_EXTRA_CLANG_ARGS");
+    // Ensure that pkg-config doesn't interfere with our explicit path settings
+    env::remove_var("PKG_CONFIG_PATH"); 
+
+
+    // --- Setting Environment Variables for Build Tools ---
+    // These variables are set explicitly here to ensure that `cc-rs` and `bindgen`
+    // use the correct Nix-derived toolchain and include paths for standalone builds.
+    // This replicates the environment typically provided by a Nix `devShell`.
+    env::set_var("CPATH", &format!("{}/include:{}/include/c++/{}/", nix_paths.glibc_dev, nix_paths.gcc_path, nix_paths.gcc_version));
+
+
+
 
     if !Path::new("rocksdb/AUTHORS").exists() {
         update_submodules();
     }
-    bindgen_rocksdb();
+    bindgen_rocksdb(&nix_paths); // Pass nix_paths to bindgen_rocksdb
+    env::remove_var("LIBCLANG_PATH");
+    env::remove_var("LLVM_CONFIG_PATH");
+    env::remove_var("LLVM_CONFIG");
+    env::remove_var("LIBCLANG_FLAGS");
     let target = env::var("TARGET").unwrap();
 
     if !try_to_find_and_link_lib("ROCKSDB") {
@@ -481,13 +545,22 @@ fn main() {
 
         println!("cargo:rerun-if-changed=rocksdb/");
         fail_on_empty_directory("rocksdb");
-        build_rocksdb();
+        build_rocksdb(&nix_paths); // Pass nix_paths to build_rocksdb
     } else {
         cpp_link_stdlib(&target);
     }
     if cfg!(feature = "snappy") && !try_to_find_and_link_lib("SNAPPY") {
         println!("cargo:rerun-if-changed=snappy/");
         fail_on_empty_directory("snappy");
-        build_snappy();
+        build_snappy(&nix_paths); // Pass nix_paths to build_snappy
     }
+
+    // Allow dependent crates to locate the sources and output directory of
+    // this crate. Notably, this allows a dependent crate to locate the RocksDB
+    // sources and built archive artifacts provided by this crate.
+    println!(
+        "cargo:cargo_manifest_dir={}",
+        env::var("CARGO_MANIFEST_DIR").unwrap()
+    );
+    println!("cargo:out_dir={}", env::var("OUT_DIR").unwrap());
 }

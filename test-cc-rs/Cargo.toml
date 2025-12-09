@@ -1,0 +1,21 @@
+[package]
+name = "test-cc-rs"
+version = "0.1.0"
+edition = "2021"
+
+[workspace] # Added to isolate this package as its own workspace
+
+[[bin]]
+name = "test-cc-rs"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
+
+[build-dependencies]
+cc = "1.0"
+libz-sys = { version = "1.1", default-features = false }
+bzip2-sys = { version = "0.1", default-features = false }
+lz4-sys = { version = "1.10" }
+zstd-sys = { version = "2.0", default-features = false, features = ["legacy", "zdict_builder"] }
+pkg-config = { version = "0.3" }
