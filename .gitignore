@@ -19,3 +19,20 @@ todo.txt
 #todo.txt#
 .#todo.txt
 oldflake.nix
+
+# Temporary files and backups
+#env.txt#
+#strace.txt#
+#todo.txt#
+.#env.txt
+.#strace.txt
+Makefile.old
+collect.sh
+env.txt
+env.txt~
+librocksdb-sys/build.rs.old
+librocksdb-sys/build.rs.old2
+librocksdb-sys/build.rs.old~
+str2.txt
+test.sh
+test.sh~
