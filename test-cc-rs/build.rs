@@ -1,4 +1,6 @@
 use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 struct NixPaths {
@@ -26,26 +28,42 @@ impl NixPaths {
     }
 }
 
+
 fn main() {
     // Unset potentially interfering environment variables
-    env::remove_var("CXX");
-    env::remove_var("CXXFLAGS");
-    env::remove_var("CPATH");
+    // env::remove_var("CXX"); // Will be set explicitly
+    // env::remove_var("CXXFLAGS"); // Will be set explicitly
+    // env::remove_var("CPATH"); // Will be set explicitly
     env::remove_var("C_INCLUDE_PATH");
     env::remove_var("CPLUS_INCLUDE_PATH");
 
     let nix_paths = NixPaths::default_nix_paths();
     
+    // Set environment variables for the compilers and include paths
+    env::set_var("CC", &format!("{}/bin/gcc", nix_paths.gcc_path));
+    env::set_var("CXX", &format!("{}/bin/g++", nix_paths.gcc_path));
+    env::set_var("CPATH", &format!("{}/include", nix_paths.glibc_dev));
+    env::set_var("CXXFLAGS", &format!("-isystem {}/include -I {}", nix_paths.glibc_dev, nix_paths.gcc_cpp_include));
+
     let mut build = cc::Build::new();
     build.cpp(true); // Compile as C++
-    build.file("src/test.cpp"); // Our simple C++ file
-    
+    // Our simple C++ file and Snappy test files
+    build.file("src/test.cpp"); 
+    build.file("snappy_test_files/snappy.cc");
+    build.file("snappy_test_files/snappy-c.cc");
+    build.file("snappy_test_files/snappy-sinksource.cc");
+
     // Explicitly set the compiler and flags
     build.compiler(&format!("{}/bin/g++", nix_paths.gcc_path));
 
     // Explicitly add include paths
     build.flag(&format!("-isystem{}/include", nix_paths.glibc_dev)); // Glibc C headers
     build.include(&nix_paths.gcc_cpp_include); // GCC C++ headers
+    build.include("snappy_test_files"); // Add Snappy include path
+
+    // Snappy specific flags
+    build.flag("-std=c++11"); // Snappy requires C++11
+    build.define("NDEBUG", Some("1"));
 
     // Add conditional defines and includes for external libraries
     if cfg!(feature = "zlib") {

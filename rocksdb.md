@@ -1,0 +1,1 @@
+Okay, I have created `rocksdb.md` summarizing the plan to address the build issues. I am now ready to reboot.

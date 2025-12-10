@@ -35,4 +35,4 @@ librocksdb-sys/build.rs.old2
 librocksdb-sys/build.rs.old~
 str2.txt
 test.sh
-test.sh~
+test.sh~flake.lock

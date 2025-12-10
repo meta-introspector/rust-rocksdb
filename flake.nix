@@ -63,16 +63,15 @@
             # These are inherited from the devShell in oldflake.nix
             # and should be sufficient for general compilation.
             export CFLAGS="-O2 -g";
-            export CXXFLAGS="-O2 -g";
+            export CXXFLAGS="-O2 -g -isystem ${pkgs.glibc.dev}/include -isystem ${pkgs.gcc}/include/c++/${pkgs.gcc.version}";
 
             # Flags for bindgen to find system headers.
             # This incorporates the logic from oldflake.nix shellHook.
-            export BINDGEN_EXTRA_CLANG_ARGS=$(
+            export BINDGEN_EXTRA_CLANG_ARGS="$(
               cat ${pkgs.stdenv.cc}/nix-support/libc-crt1-cflags \
                    ${pkgs.stdenv.cc}/nix-support/libc-cflags \
                    ${pkgs.stdenv.cc}/nix-support/cc-cflags) \
-            ${pkgs.lib.optionalString pkgs.stdenv.cc.isClang "-idirafter ${pkgs.stdenv.cc.cc.lib}/lib/clang/${pkgs.lib.getVersion pkgs.stdenv.cc.cc}/include"}
-            ";
+            ${pkgs.lib.optionalString pkgs.stdenv.cc.isClang "-idirafter ${pkgs.stdenv.cc.cc.lib}/lib/clang/${pkgs.lib.getVersion pkgs.stdenv.cc.cc}/include"}"
 
             # Ensure cargo is available in PATH for cargo build inside nix develop
             export PATH="${myRustc}/bin:${pkgs.cargo}/bin:$PATH";
@@ -81,9 +80,10 @@
             export PKG_CONFIG_PATH="${pkgs.openssl_1_1.dev}/lib/pkgconfig''${PKG_CONFIG_PATH:+:}$PKG_CONFIG_PATH";
             export REAL_LIBRARY_PATH_VAR="LD_LIBRARY_PATH";
             export REAL_LIBRARY_PATH="$LD_LIBRARY_PATH";
-            export CPATH="${pkgs.glibc.dev}/include:${pkgs.gcc}/include${CPATH:+:}$CPATH"; # Added glibc.dev/include to CPATH
+            export CPATH="${pkgs.glibc.dev}/include:${pkgs.gcc}/include"; # Simplified CPATH for debugging
             export RUSTC_BOOTSTRAP=1;
-            export LIBCLANG_FLAGS="--sysroot=${pkgs.glibc.dev}"; # For bindgen to find stdbool.h
+            export LIBCLANG_FLAGS="--sysroot=${pkgs.glibc.dev}";
+            # For bindgen to find stdbool.h
             export CFG_RELEASE="1.70.0"; # Added to resolve rustc_hir error
 
             echo "Nix development shell for librocksdb-sys is ready. Run 'cargo build' to compile.";

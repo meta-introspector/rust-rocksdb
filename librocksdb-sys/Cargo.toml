@@ -16,7 +16,7 @@ categories = ["api-bindings", "database", "external-ffi-bindings"]
 links = "rocksdb"
 
 [features]
-default = ["static", "bindgen/runtime"]
+default = ["static", "bindgen/runtime", "lz4"]
 jemalloc = []
 static = ["libz-sys?/static", "bzip2-sys?/static"]
 bindgen-runtime = ["bindgen/runtime"]
@@ -31,7 +31,14 @@ bzip2 = ["bzip2-sys"]
 rtti = []
 lto = []
 
-[dependencies]
+
+[build-dependencies]
+cc = { version = "1.0", features = ["parallel"] }
+bindgen = { version = "0.72", default-features = false }
+pkg-config = { version = "0.3", optional = true }
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 libc = "0.2"
 # tikv-jemalloc-sys = { workspace=true,  features = [
 #     "unprefixed_malloc_on_supported_platforms",
@@ -47,7 +54,3 @@ bzip2-sys = { version = "0.1", default-features = false, optional = true }
 [dev-dependencies]
 uuid = { version = "1.0", features = ["v4"] }
 
-[build-dependencies]
-cc = { version = "1.0", features = ["parallel"] }
-bindgen = { version = "0.72", default-features = false }
-pkg-config = { version = "0.3", optional = true }

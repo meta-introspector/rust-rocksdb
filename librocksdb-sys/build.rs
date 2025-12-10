@@ -4,50 +4,77 @@ use std::{env, fs, path::PathBuf, process::Command};
 
 const CACHE_FILE_NAME: &str = ".nix_paths_cache.json"; // Still here for context, not actively used right now
 
-#[derive(Debug, Clone)] // Derive Debug and Clone are sufficient without Serde
+#[derive(Debug, Clone)]
 struct NixPaths {
+    // Basic C/C++ toolchain
+    glibc_dev: String,          // Path to glibc development headers
+    gcc_path: String,           // Path to the GCC derivation (containing bin/g++)
+    gcc_cpp_include: String,    // Path to GCC's C++ standard library headers
+
+    // External library includes (examples)
+    zlib_include: String,
+    bzip2_include: String,
+    lz4_include: String,
+    zstd_include: String,
+
+    // For bindgen (if used)
     llvm_config: String,
     libclang_path: String,
     llvm_config_path: String,
-    glibc_dev: String,
-    gcc_path: String,
-    gcc_version: String, 
-    zlib_include: String,
-    bzip2_include: String,
 }
 
 impl NixPaths {
-    // from_env and load_from_cache are no longer called in main for this hardcoded approach,
-    // but the structure is retained for future dynamic path extraction.
-
-    /// Provides hardcoded default values for NixPaths.
-    /// These paths were manually extracted from a Nix `devShell` environment
-    /// using commands like `g++ -Wp,-v -x c++ -` and `nix eval --raw --impure --expr 'pkgs.llvmPackages_21.llvm' `.
-    ///
-    /// IMPORTANT: These paths are specific to the Nix environment they were extracted from.
-    /// They should eventually be replaced by a mechanism that dynamically queries Nix
-    /// for the correct paths at compile time (e.g., via proc-macros or `nix build` commands).
     fn default_nix_paths() -> Self {
         println!("cargo:warning=Using hardcoded default Nix paths.");
         NixPaths {
-            // Derived from: nix eval --raw --impure --expr 'pkgs.llvmPackages_21.llvm.dev'
-            llvm_config: "/nix/store/v9cr3iv7wnrkjy1s3z1fi7wpkl7sy4hx-llvm-21.1.2-dev/bin/llvm-config".to_string(),
-            // Derived from: nix eval --raw --impure --expr 'pkgs.llvmPackages_21.libclang.lib'
-            libclang_path: "/nix/store/sqlnjj8c3n3si3sjnadhdbcwgrk97g2w-clang-wrapper-21.1.2/lib".to_string(),
-            // Derived from: nix eval --raw --impure --expr 'pkgs.llvmPackages_21.llvm'
-            llvm_config_path: "/nix/store/b5bmnvk17mq8qm5b8bpi9fkyr5g2d2m4-llvm-21.1.2/lib".to_string(),
-            // Derived from: nix eval --raw --impure --expr 'pkgs.glibc.dev' (and verified via g++ -Wp,-v)
+            // --- Basic C/C++ Toolchain Paths ---
+            // Example: nix eval --raw --impure --expr 'pkgs.glibc.dev'
             glibc_dev: "/nix/store/gi4cz4ir3zlwhf1azqfgxqdnczfrwsr7-glibc-2.40-66-dev".to_string(),
-            // Derived from: `g++ -Wp,-v -x c++ -` output, showing actual GCC installation path
-            gcc_path: "/nix/store/vr15iyyykg9zai6fpgvhcgyw7gckl78w-gcc-wrapper-14.3.0".to_string(),
-            // Manually extracted from the gcc_path string
-            gcc_version: "14.3.0".to_string(), 
+            // Example: Actual GCC derivation path from 'g++ -Wp,-v' output
+            gcc_path: "/nix/store/82kmz7r96navanrc2fgckh2bamiqrgsw-gcc-14.3.0".to_string(),
+            // Example: Path to GCC's C++ headers
+            gcc_cpp_include: "/nix/store/82kmz7r96navanrc2fgckh2bamiqrgsw-gcc-14.3.0/include/c++/14.3.0".to_string(),
+
+            // --- External Library Include Paths ---
+            // Example: nix eval --raw --impure --expr 'pkgs.zlib.dev'
             zlib_include: "/nix/store/hqvsiah013yzb17b13fn18fpqk7m13cg-zlib-1.3.1-dev/include".to_string(),
+            // Example: nix eval --raw --impure --expr 'pkgs.bzip2.dev'
             bzip2_include: "/nix/store/q1a3bjhg3b4plgb7fk7zis1gi09rbi1d-bzip2-1.0.8-dev/include".to_string(),
+            // Placeholder: Replace with actual LZ4 dev include path
+            // Command to get this path: nix eval --raw --impure --expr '(import <nixpkgs> {}).lz4.dev'
+            lz4_include: "/nix/store/n9gqsgvq7vjzbll7mps9pqkmy1hj1gcq-lz4-1.9.4-dev/include".to_string(),
+            // Placeholder: Replace with actual ZSTD dev include path
+            // Command to get this path: nix eval --raw --impure --expr '(import <nixpkgs> {}).zstd.dev'
+            zstd_include: "/nix/store/cgcbi8wsxhcf8kkzn78h6h158adpfzbc-zstd-1.5.5-dev/include".to_string(),
+
+            // --- LLVM/Clang Paths for Bindgen (examples from librocksdb-sys) ---
+            // Example: nix eval --raw --impure --expr 'pkgs.llvmPackages_21.llvm.dev'
+            llvm_config: "/nix/store/v9cr3iv7wnrkjy1s3z1fi7wpkl7sy4hx-llvm-21.1.2-dev/bin/llvm-config".to_string(),
+            // Example: nix eval --raw --impure --expr 'pkgs.llvmPackages_21.libclang.lib'
+            libclang_path: "/nix/store/sqlnjj8c3n3si3sjnadhdbcwgrk97g2w-clang-wrapper-21.1.2/lib".to_string(),
+            // Example: nix eval --raw --impure --expr 'pkgs.llvmPackages_21.llvm'
+            llvm_config_path: "/nix/store/b5bmnvk17mq8qm5b8bpi9fkyr5g2d2m4-llvm-21.1.2/lib".to_string(),
         }
     }
 }
 
+
+fn generate_snappy_stubs_public_h(out_dir: &Path, snappy_source_dir: &Path) {
+    let input_path = snappy_source_dir.join("snappy-stubs-public.h.in");
+    let output_path = out_dir.join("snappy-stubs-public.h");
+
+    let mut content = fs::read_to_string(&input_path)
+        .expect("Failed to read snappy-stubs-public.h.in");
+
+    // Replace placeholders
+    content = content.replace("${HAVE_SYS_UIO_H_01}", "1"); // Assuming Linux, sys/uio.h is present
+    content = content.replace("${PROJECT_VERSION_MAJOR}", "1");
+    content = content.replace("${PROJECT_VERSION_MINOR}", "2");
+    content = content.replace("${PROJECT_VERSION_PATCH}", "2");
+
+    fs::write(&output_path, content)
+        .expect("Failed to write snappy-stubs-public.h");
+}
 
 // On these platforms jemalloc-sys will use a prefixed jemalloc which cannot be linked together
 // with RocksDB.
@@ -116,32 +143,52 @@ fn build_rocksdb(nix_paths: &NixPaths) {
     println!("cargo:warning=Executing build_rocksdb function.");
     let target = env::var("TARGET").unwrap(); // Re-adding this line
 
-    let mut config = cc::Build::new(); // Re-adding this line    // Force g++ to use only explicitly provided standard library include paths.
-    // This is crucial in Nix environments where toolchains are distributed across
-    // multiple store paths and default search mechanisms can fail.
+        let mut config = cc::Build::new();
 
+        config.cpp(true); // Always compile as C++ for RocksDB
 
+    
 
+        // Explicitly set the compiler
 
+        config.compiler(&format!("{}/bin/g++", nix_paths.gcc_path));
 
-    if cfg!(feature = "snappy") {
-        config.define("SNAPPY", Some("1"));
-        config.include("snappy/");
-    }
+    
 
-    if cfg!(feature = "lz4") {
-        config.define("LZ4", Some("1"));
-        if let Some(path) = env::var_os("DEP_LZ4_INCLUDE") {
-            config.include(path);
+        // Explicitly add include paths
+        // Use -isystem for Glibc C headers (standard system headers)
+        config.flag(&format!("-isystem{}/include", nix_paths.glibc_dev));
+
+        // Use -I for GCC's C++ standard library headers
+        config.include(&nix_paths.gcc_cpp_include);
+
+        // Add RocksDB's own include directory
+        config.include(rocksdb_include_dir());
+
+        if cfg!(feature = "snappy") {
+            config.define("SNAPPY", Some("1"));
+            config.include("snappy/");
         }
-    }
 
-    if cfg!(feature = "zstd") {
-        config.define("ZSTD", Some("1"));
-        if let Some(path) = env::var_os("DEP_ZSTD_INCLUDE") {
-            config.include(path);
+        if cfg!(feature = "lz4") {
+            config.define("LZ4", Some("1"));
+            config.include(&nix_paths.lz4_include);
+            println!("cargo:rustc-link-lib=static=lz4"); // Example linking
         }
-    }
+
+    
+
+        if cfg!(feature = "zstd") {
+
+            config.define("ZSTD", Some("1"));
+
+            config.include(&nix_paths.zstd_include);
+
+            println!("cargo:rustc-link-lib=static=zstd"); // Example linking
+
+        }
+
+    
 
     if cfg!(feature = "zlib") {
         config.define("ZLIB", Some("1"));
@@ -168,6 +215,7 @@ fn build_rocksdb(nix_paths: &NixPaths) {
     }
 
     config.include(".");
+    config.include("rocksdb/");
     config.define("NDEBUG", Some("1"));
 
     let mut lib_sources = include_str!("rocksdb_lib_sources.txt")
@@ -381,9 +429,23 @@ fn build_rocksdb(nix_paths: &NixPaths) {
 fn build_snappy(nix_paths: &NixPaths) {
     let target = env::var("TARGET").unwrap();
     let endianness = env::var("CARGO_CFG_TARGET_ENDIAN").unwrap();
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let snappy_source_dir = PathBuf::from("snappy"); // Assuming "snappy/" is the base dir for snappy source files
+
+    generate_snappy_stubs_public_h(&out_dir, &snappy_source_dir);
+
     let mut config = cc::Build::new();
     config.define("NDEBUG", Some("1"));
     config.extra_warnings(false);
+
+    // Explicitly set the compiler
+    config.compiler(&format!("{}/bin/g++", nix_paths.gcc_path));
+
+    // Explicitly add include paths
+    config.flag(&format!("-isystem{}/include", nix_paths.glibc_dev)); // Glibc C headers
+    config.include(&nix_paths.gcc_cpp_include); // GCC C++ headers
+    config.include("snappy/"); // Include Snappy's own directory
+    config.include(&out_dir); // Include the directory where generated headers are located
 
     if target.contains("msvc") {
         config.flag("-EHsc");
@@ -499,13 +561,25 @@ fn main() {
     // These environment variables are commonly set by Nix shellHooks or other build systems.
     // Unsetting them ensures that our hardcoded paths (or future dynamically extracted paths)
     // are used consistently, preventing unexpected behavior or conflicts.
-    env::remove_var("LIBCLANG_PATH");
+    // env::remove_var("CXX"); // Now set explicitly later
+    env::remove_var("CXXFLAGS"); // Keep removed, we will set it after
+    env::remove_var("CPATH");
+    env::remove_var("C_INCLUDE_PATH");
+    env::remove_var("CPLUS_INCLUDE_PATH");
+    // env::remove_var("CC"); // Now set explicitly later
+    env::remove_var("CFLAGS");
+    env::remove_var("LIBRARY_PATH");
+    env::remove_var("LD_LIBRARY_PATH");
+    env::remove_var("PROTOC");
+    env::remove_var("PROTOC_INCLUDE");
+    env::remove_var("BINDGEN_EXTRA_CLANG_ARGS");
     env::remove_var("LLVM_CONFIG");
     env::remove_var("LLVM_CONFIG_PATH");
-    env::remove_var("CPATH");
-    env::remove_var("CFLAGS");
-    env::remove_var("CXXFLAGS");
-    env::remove_var("BINDGEN_EXTRA_CLANG_ARGS");
+    env::remove_var("LIBCLANG_PATH");
+    env::remove_var("LIBCLANG_FLAGS");
+    env::remove_var("NIX_GLIBC_DEV");
+    env::remove_var("NIX_GCC_PATH");
+    env::remove_var("NIX_GCC_REAL_PATH");
     // Ensure that pkg-config doesn't interfere with our explicit path settings
     env::remove_var("PKG_CONFIG_PATH"); 
 
@@ -514,7 +588,10 @@ fn main() {
     // These variables are set explicitly here to ensure that `cc-rs` and `bindgen`
     // use the correct Nix-derived toolchain and include paths for standalone builds.
     // This replicates the environment typically provided by a Nix `devShell`.
-    env::set_var("CPATH", &format!("{}/include:{}/include/c++/{}/", nix_paths.glibc_dev, nix_paths.gcc_path, nix_paths.gcc_version));
+    env::set_var("CC", &format!("{}/bin/gcc", nix_paths.gcc_path));
+    env::set_var("CXX", &format!("{}/bin/g++", nix_paths.gcc_path));
+    env::set_var("CPATH", ""); // Set to empty string to avoid conflicts
+    env::set_var("CXXFLAGS", ""); // Set to empty string to avoid conflicts
 
 
 
