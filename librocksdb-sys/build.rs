@@ -2,7 +2,7 @@ use std::path::Path;
 use std::{env, fs, path::PathBuf, process::Command};
 // Removed serde imports as dynamic loading/saving is temporarily bypassed
 
-const CACHE_FILE_NAME: &str = ".nix_paths_cache.json"; // Still here for context, not actively used right now
+//const CACHE_FILE_NAME: &str = ".nix_paths_cache.json"; // Still here for context, not actively used right now
 
 #[derive(Debug, Clone)]
 struct NixPaths {
@@ -51,7 +51,8 @@ impl NixPaths {
             // Example: nix eval --raw --impure --expr 'pkgs.llvmPackages_21.llvm.dev'
             llvm_config: "/nix/store/v9cr3iv7wnrkjy1s3z1fi7wpkl7sy4hx-llvm-21.1.2-dev/bin/llvm-config".to_string(),
             // Example: nix eval --raw --impure --expr 'pkgs.llvmPackages_21.libclang.lib'
-            libclang_path: "/nix/store/sqlnjj8c3n3si3sjnadhdbcwgrk97g2w-clang-wrapper-21.1.2/lib".to_string(),
+	    //            libclang_path: "/nix/store/sqlnjj8c3n3si3sjnadhdbcwgrk97g2w-clang-wrapper-21.1.2/lib".to_string(),
+            libclang_path: "/nix/store/10mkp77lmqz8x2awd8hzv6pf7f7rkf6d-clang-19.1.7-lib/lib/".to_string(),	   
             // Example: nix eval --raw --impure --expr 'pkgs.llvmPackages_21.llvm'
             llvm_config_path: "/nix/store/b5bmnvk17mq8qm5b8bpi9fkyr5g2d2m4-llvm-21.1.2/lib".to_string(),
         }
