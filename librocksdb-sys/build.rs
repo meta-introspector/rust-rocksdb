@@ -27,7 +27,6 @@ struct NixPaths {
 
 impl NixPaths {
     fn default_nix_paths() -> Self {
-        println!("cargo:warning=Using hardcoded default Nix paths.");
         NixPaths {
             // --- Basic C/C++ Toolchain Paths ---
             // Example: nix eval --raw --impure --expr 'pkgs.glibc.dev'
@@ -108,7 +107,6 @@ fn rocksdb_include_dir() -> String {
 }
 
 fn bindgen_rocksdb(nix_paths: &NixPaths) {
-    println!("cargo:warning=bindgen_rocksdb: setting LIBCLANG_PATH={}", nix_paths.libclang_path);
     env::set_var("LIBCLANG_PATH", &nix_paths.libclang_path);
     env::set_var("LLVM_CONFIG_PATH", &nix_paths.llvm_config_path);
     env::set_var("LLVM_CONFIG", &nix_paths.llvm_config);
@@ -406,7 +404,6 @@ fn build_rocksdb(nix_paths: &NixPaths) {
     } else {
         config.flag(cxx_standard());
         // matches the flags in CMakeLists.txt from rocksdb
-        config.flag("-v");
         config.flag("-Wfatal-errors");
         config.flag("-Wsign-compare");
         config.flag("-Wshadow");
