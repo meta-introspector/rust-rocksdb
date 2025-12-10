@@ -15,7 +15,9 @@ struct NixPaths {
     zlib_include: String,
     bzip2_include: String,
     lz4_include: String,
+    lz4_lib: String, // New field for lz4 library path
     zstd_include: String,
+    zstd_lib: String, // New field for zstd library path
 
     // For bindgen (if used)
     llvm_config: String,
@@ -40,12 +42,11 @@ impl NixPaths {
             zlib_include: "/nix/store/hqvsiah013yzb17b13fn18fpqk7m13cg-zlib-1.3.1-dev/include".to_string(),
             // Example: nix eval --raw --impure --expr 'pkgs.bzip2.dev'
             bzip2_include: "/nix/store/q1a3bjhg3b4plgb7fk7zis1gi09rbi1d-bzip2-1.0.8-dev/include".to_string(),
-            // Placeholder: Replace with actual LZ4 dev include path
-            // Command to get this path: nix eval --raw --impure --expr '(import <nixpkgs> {}).lz4.dev'
             lz4_include: "/nix/store/n9gqsgvq7vjzbll7mps9pqkmy1hj1gcq-lz4-1.9.4-dev/include".to_string(),
-            // Placeholder: Replace with actual ZSTD dev include path
-            // Command to get this path: nix eval --raw --impure --expr '(import <nixpkgs> {}).zstd.dev'
+            lz4_lib: "/nix/store/9awv9f5xrvfb85jxk4wlh9n138hpnlpx-lz4-1.10.0-lib/lib".to_string(), // Actual lib path from `test-cc-rs`
             zstd_include: "/nix/store/cgcbi8wsxhcf8kkzn78h6h158adpfzbc-zstd-1.5.5-dev/include".to_string(),
+            zstd_lib: "/nix/store/ry1jx5972j5clvqapx33v9imba8ywvq6-zstd-1.5.5/lib".to_string(), // Actual lib path from `test-cc-rs`
+
 
             // --- LLVM/Clang Paths for Bindgen (examples from librocksdb-sys) ---
             // Example: nix eval --raw --impure --expr 'pkgs.llvmPackages_21.llvm.dev'
@@ -170,23 +171,39 @@ fn build_rocksdb(nix_paths: &NixPaths) {
             config.include("snappy/");
         }
 
-        if cfg!(feature = "lz4") {
-            config.define("LZ4", Some("1"));
-            config.include(&nix_paths.lz4_include);
-            println!("cargo:rustc-link-lib=static=lz4"); // Example linking
-        }
+                if cfg!(feature = "lz4") {
 
-    
+                    config.define("LZ4", Some("1"));
 
-        if cfg!(feature = "zstd") {
+                    config.include(&nix_paths.lz4_include);
 
-            config.define("ZSTD", Some("1"));
+                    println!("cargo:rustc-link-search=native={}", nix_paths.lz4_lib); // Add link search path
 
-            config.include(&nix_paths.zstd_include);
+                    println!("cargo:rustc-link-lib=dylib=lz4"); // Change to dylib linking
 
-            println!("cargo:rustc-link-lib=static=zstd"); // Example linking
+                }
 
-        }
+        
+
+        
+
+                if cfg!(feature = "zstd") {
+
+        
+
+                    config.define("ZSTD", Some("1"));
+
+        
+
+                    config.include(&nix_paths.zstd_include);
+
+                    println!("cargo:rustc-link-search=native={}", nix_paths.zstd_lib); // Add link search path
+
+                    println!("cargo:rustc-link-lib=dylib=zstd"); // Change to dylib linking
+
+        
+
+                }
 
     
 
