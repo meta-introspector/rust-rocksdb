@@ -1,6 +1,4 @@
 use std::env;
-use std::fs;
-use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 struct NixPaths {
@@ -10,7 +8,9 @@ struct NixPaths {
     zlib_include: String,
     bzip2_include: String,
     lz4_include: String,
+    lz4_lib: String, // New field for lz4 library path
     zstd_include: String,
+    zstd_lib: String, // New field for zstd library path
 }
 
 impl NixPaths {
@@ -22,8 +22,10 @@ impl NixPaths {
             gcc_cpp_include: "/nix/store/82kmz7r96navanrc2fgckh2bamiqrgsw-gcc-14.3.0/include/c++/14.3.0".to_string(),
             zlib_include: "/nix/store/hqvsiah013yzb17b13fn18fpqk7m13cg-zlib-1.3.1-dev/include".to_string(),
             bzip2_include: "/nix/store/q1a3bjhg3b4plgb7fk7zis1gi09rbi1d-bzip2-1.0.8-dev/include".to_string(),
-            lz4_include: "/nix/store/somehash-lz4-1.9.4-dev/include".to_string(), // Placeholder
-            zstd_include: "/nix/store/somehash-zstd-1.5.5-dev/include".to_string(), // Placeholder
+            lz4_include: "/nix/store/n9gqsgvq7vjzbll7mps9pqkmy1hj1gcq-lz4-1.9.4-dev/include".to_string(),
+            lz4_lib: "/nix/store/9awv9f5xrvfb85jxk4wlh9n138hpnlpx-lz4-1.10.0-lib/lib".to_string(), // Actual lib path
+            zstd_include: "/nix/store/cgcbi8wsxhcf8kkzn78h6h158adpfzbc-zstd-1.5.5-dev/include".to_string(),
+            zstd_lib: "/nix/store/ry1jx5972j5clvqapx33v9imba8ywvq6-zstd-1.5.5/lib".to_string(), // Actual lib path
         }
     }
 }
@@ -77,10 +79,14 @@ fn main() {
     if cfg!(feature = "lz4") {
         build.define("LZ4", Some("1"));
         build.include(&nix_paths.lz4_include);
+        println!("cargo:rustc-link-search=native={}", nix_paths.lz4_lib);
+        println!("cargo:rustc-link-lib=dylib=lz4");
     }
     if cfg!(feature = "zstd") {
         build.define("ZSTD", Some("1"));
         build.include(&nix_paths.zstd_include);
+        println!("cargo:rustc-link-search=native={}", nix_paths.zstd_lib);
+        println!("cargo:rustc-link-lib=dylib=zstd");
     }
 
     build.compile("test_cc_rs_cxx"); // Name of the static library to be created
