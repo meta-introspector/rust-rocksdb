@@ -78,6 +78,36 @@ features = ["bindgen-static", "snappy", "lz4", "zstd", "zlib", "bzip2"]
 
 Notice that `runtime` and `static` features are mutually exclusive, and won't compile if both are enabled.
 
+## Switch between static and dynamic linking for bindgen (features `bindgen-static` and `bindgen-runtime`)
+
+The feature `bindgen-runtime` will enable the `runtime` feature of bindgen, which dynamically
+links to libclang. This is suitable for most platforms, and is enabled by default.
+
+The feature `bindgen-static` will enable the `static` feature of bindgen, which statically
+links to libclang. This is suitable for musllinux platforms, such as Alpine linux.
+To build on Alpine linux for example, make these changes to your Cargo.toml:
+
+```toml
+[dependencies.rocksdb]
+default-features = false
+features = ["bindgen-static", "snappy", "lz4", "zstd", "zlib", "bzip2"]
+```
+
+Notice that `runtime` and `static` features are mutually exclusive, and won't compile if both are enabled.
+
+## Nix Build Integration for C/C++ Dependencies
+
+The `test-cc-rs` crate serves as a crucial integration test to verify the correct setup of C/C++ dependencies within a Nix environment. It mimics the build process for `librocksdb-sys`, ensuring that explicit Nix store paths for compilers, system headers, and external libraries (like Snappy, LZ4, Zstd, Zlib, and Bzip2) are correctly managed by `build.rs`.
+
+Key aspects tested and demonstrated by `test-cc-rs` include:
+
+*   **Explicit Path Management:** `build.rs` leverages hardcoded Nix store paths for `glibc` development headers, GCC compilers, and external library includes (e.g., `lz4_include`, `zstd_include`).
+*   **Compiler Environment Configuration:** Environment variables like `CC`, `CXX`, `CPATH`, and `CXXFLAGS` are explicitly set within `build.rs` to guide the `cc-rs` crate and underlying C/C++ compilers, resolving common `stdlib.h` and header lookup issues in Nix.
+*   **Dynamic Linking:** External libraries such as LZ4 and Zstd are configured for dynamic linking (`dylib`) to align with how these libraries are typically provided in Nix, addressing linker errors for static library lookups.
+*   **Custom Header Generation:** For certain complex dependencies like Snappy, `test-cc-rs` demonstrates the on-the-fly generation of necessary header files (e.g., `snappy-stubs-public.h` from `snappy-stubs-public.h.in`) during the build process to ensure all required definitions are available.
+
+This integration test ensures that `librocksdb-sys` can be reliably built and linked against its C/C++ dependencies in a reproducible Nix build environment.
+
 ## LTO
 Enable the `lto` feature to enable link-time optimization. It will compile rocksdb with `-flto` flag. This feature is disabled by default.
 
