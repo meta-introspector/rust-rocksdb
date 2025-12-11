@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::{env, fs, path::PathBuf, process::Command};
+use rust_nix_bootstrap::{NixPathsProvider, HardcodedNixPaths};
 // Removed serde imports as dynamic loading/saving is temporarily bypassed
 
 //const CACHE_FILE_NAME: &str = ".nix_paths_cache.json"; // Still here for context, not actively used right now
@@ -25,36 +26,91 @@ struct NixPaths {
     llvm_config_path: String,
 }
 
+// Helper function to get Nix path from environment variable or hardcoded fallback
+fn get_nix_path_from_env(env_var: &str, hardcoded_path_from_provider: &'static str) -> String {
+    let env_val = env::var(env_var);
+
+    match env_val {
+        Ok(path_from_env) => {
+            // Compare with hardcoded path if available
+            if path_from_env != hardcoded_path_from_provider {
+                println!(
+                    "cargo:warning=Nix path mismatch for {}: Environment provided '{}', hardcoded is '{}'.",
+                    env_var, path_from_env, hardcoded_path_from_provider
+                );
+                println!("cargo:warning=Using path from environment variable: {}", path_from_env);
+            } else {
+                println!("cargo:warning=Nix path for {} matches hardcoded: {}", env_var, path_from_env);
+            }
+            path_from_env
+        }
+        Err(_) => {
+            println!(
+                "cargo:warning=Environment variable {} not set. Using hardcoded fallback path from provider: {}",
+                env_var, hardcoded_path_from_provider
+            );
+            hardcoded_path_from_provider.to_string()
+        }
+    }
+}
+
 impl NixPaths {
     fn default_nix_paths() -> Self {
+        let hardcoded_provider = HardcodedNixPaths;
         NixPaths {
             // --- Basic C/C++ Toolchain Paths ---
-            // Example: nix eval --raw --impure --expr 'pkgs.glibc.dev'
-            glibc_dev: "/nix/store/gi4cz4ir3zlwhf1azqfgxqdnczfrwsr7-glibc-2.40-66-dev".to_string(),
-            // Example: Actual GCC derivation path from 'g++ -Wp,-v' output
-            gcc_path: "/nix/store/82kmz7r96navanrc2fgckh2bamiqrgsw-gcc-14.3.0".to_string(),
-            // Example: Path to GCC's C++ headers
-            gcc_cpp_include: "/nix/store/82kmz7r96navanrc2fgckh2bamiqrgsw-gcc-14.3.0/include/c++/14.3.0".to_string(),
+            glibc_dev: get_nix_path_from_env(
+                "NIX_GLIBC_DEV",
+                hardcoded_provider.glibc_dev(),
+            ),
+            gcc_path: get_nix_path_from_env(
+                "NIX_GCC_PATH",
+                hardcoded_provider.gcc_path(),
+            ),
+            gcc_cpp_include: get_nix_path_from_env(
+                "NIX_GCC_CPP_INCLUDE",
+                hardcoded_provider.gcc_cpp_include(),
+            ),
 
             // --- External Library Include Paths ---
-            // Example: nix eval --raw --impure --expr 'pkgs.zlib.dev'
-            zlib_include: "/nix/store/hqvsiah013yzb17b13fn18fpqk7m13cg-zlib-1.3.1-dev/include".to_string(),
-            // Example: nix eval --raw --impure --expr 'pkgs.bzip2.dev'
-            bzip2_include: "/nix/store/q1a3bjhg3b4plgb7fk7zis1gi09rbi1d-bzip2-1.0.8-dev/include".to_string(),
-            lz4_include: "/nix/store/n9gqsgvq7vjzbll7mps9pqkmy1hj1gcq-lz4-1.9.4-dev/include".to_string(),
-            lz4_lib: "/nix/store/9awv9f5xrvfb85jxk4wlh9n138hpnlpx-lz4-1.10.0-lib/lib".to_string(), // Actual lib path from `test-cc-rs`
-            zstd_include: "/nix/store/cgcbi8wsxhcf8kkzn78h6h158adpfzbc-zstd-1.5.5-dev/include".to_string(),
-            zstd_lib: "/nix/store/ry1jx5972j5clvqapx33v9imba8ywvq6-zstd-1.5.5/lib".to_string(), // Actual lib path from `test-cc-rs`
+            zlib_include: get_nix_path_from_env(
+                "NIX_ZLIB_INCLUDE",
+                hardcoded_provider.zlib_include(),
+            ),
+            bzip2_include: get_nix_path_from_env(
+                "NIX_BZIP2_INCLUDE",
+                hardcoded_provider.bzip2_include(),
+            ),
+            lz4_include: get_nix_path_from_env(
+                "NIX_LZ4_INCLUDE",
+                hardcoded_provider.lz4_include(),
+            ),
+            lz4_lib: get_nix_path_from_env(
+                "NIX_LZ4_LIB",
+                hardcoded_provider.lz4_lib(),
+            ),
+            zstd_include: get_nix_path_from_env(
+                "NIX_ZSTD_INCLUDE",
+                hardcoded_provider.zstd_include(),
+            ),
+            zstd_lib: get_nix_path_from_env(
+                "NIX_ZSTD_LIB",
+                hardcoded_provider.zstd_lib(),
+            ),
 
-
-            // --- LLVM/Clang Paths for Bindgen (examples from librocksdb-sys) ---
-            // Example: nix eval --raw --impure --expr 'pkgs.llvmPackages_21.llvm.dev'
-            llvm_config: "/nix/store/v9cr3iv7wnrkjy1s3z1fi7wpkl7sy4hx-llvm-21.1.2-dev/bin/llvm-config".to_string(),
-            // Example: nix eval --raw --impure --expr 'pkgs.llvmPackages_21.libclang.lib'
-	    //            libclang_path: "/nix/store/sqlnjj8c3n3si3sjnadhdbcwgrk97g2w-clang-wrapper-21.1.2/lib".to_string(),
-            libclang_path: "/nix/store/10mkp77lmqz8x2awd8hzv6pf7f7rkf6d-clang-19.1.7-lib/lib/".to_string(),	   
-            // Example: nix eval --raw --impure --expr 'pkgs.llvmPackages_21.llvm'
-            llvm_config_path: "/nix/store/b5bmnvk17mq8qm5b8bpi9fkyr5g2d2m4-llvm-21.1.2/lib".to_string(),
+            // --- LLVM/Clang Paths for Bindgen ---
+            llvm_config: get_nix_path_from_env(
+                "NIX_LLVM_CONFIG",
+                hardcoded_provider.llvm_config(),
+            ),
+            libclang_path: get_nix_path_from_env(
+                "NIX_LIBCLANG_PATH",
+                hardcoded_provider.libclang_path(),
+            ),
+            llvm_config_path: get_nix_path_from_env(
+                "NIX_LLVM_CONFIG_PATH",
+                hardcoded_provider.llvm_config_path(),
+            ),
         }
     }
 }

@@ -47,6 +47,7 @@ bzip2-sys = { version = "0.1", default-features = false, optional = true }
 cc = { version = "1.0", features = ["parallel"] }
 bindgen = { version = "0.72", default-features = false }
 pkg-config = { version = "0.3" }
+rust-nix-bootstrap = { workspace = true }
 # tikv-jemalloc-sys = { workspace=true,  features = [
 #     "unprefixed_malloc_on_supported_platforms",
 # ], optional = true } #version = "0.6",
